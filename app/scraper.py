@@ -8,41 +8,78 @@ import random
 import cloudscraper  # For bypassing Cloudflare protection
 import os
 from datetime import datetime
+from fake_useragent import UserAgent  # For generating random user agents
+import http.client
+import urllib3
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Enable debug logging for HTTP requests
+http.client.HTTPConnection.debuglevel = 1
+logging.getLogger("urllib3").setLevel(logging.DEBUG)
+logging.getLogger("urllib3").propagate = True
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 class DDPropertyScraper:
     def __init__(self):
         self.base_url = "https://www.ddproperty.com"
+        
+        # Generate a random user agent
+        self.ua = UserAgent()
+        random_user_agent = self.ua.random
+        logger.info(f"Using random User-Agent: {random_user_agent}")
         
         # Create a cloudscraper session to bypass Cloudflare protection
         self.scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
                 'platform': 'windows',
-                'desktop': True
+                'desktop': True,
+                'mobile': False
             },
-            delay=5
+            delay=5,
+            interpreter='js2py'
         )
         
         # Set headers to mimic a real browser
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'User-Agent': random_user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9,th;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
-            'Cache-Control': 'max-age=0',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
             'Upgrade-Insecure-Requests': '1',
-            'Referer': 'https://www.ddproperty.com/',
+            'Referer': 'https://www.google.com/',
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-Site': 'cross-site',
             'Sec-Fetch-User': '?1',
-            'DNT': '1'
+            'DNT': '1',
+            'sec-ch-ua': '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"'
         }
+        
+        # Configure session
+        self.scraper.headers.update(self.headers)
+        self.scraper.verify = False  # Disable SSL verification
+        
+        # Set cookies
+        self.scraper.cookies.set('userPreference', 'true', domain='ddproperty.com')
+        self.scraper.cookies.set('language', 'en', domain='ddproperty.com')
+        
+        # Set proxy (if needed)
+        # self.proxies = {
+        #     'http': 'http://your-proxy-server:port',
+        #     'https': 'https://your-proxy-server:port'
+        # }
+        # self.scraper.proxies = self.proxies
             
     def search_properties(self, search_params):
         """
@@ -69,10 +106,39 @@ class DDPropertyScraper:
                 'Origin': 'https://www.ddproperty.com'
             }
             
-            # Send HTTP request to API
+            # Try multiple approaches to get property data
+            properties = []
+            
+            # Approach 1: Try API endpoint
             try:
-                logger.info("Sending request to API endpoint...")
-                api_response = self.scraper.get(api_url, headers=api_headers)
+                logger.info("Approach 1: Trying API endpoint...")
+                
+                # Generate a new random user agent for this request
+                api_headers = self.headers.copy()
+                api_headers['User-Agent'] = self.ua.random
+                api_headers['Accept'] = 'application/json'
+                api_headers['Content-Type'] = 'application/json'
+                api_headers['X-Requested-With'] = 'XMLHttpRequest'
+                
+                logger.info(f"Using API User-Agent: {api_headers['User-Agent']}")
+                
+                # Add a delay to avoid rate limiting
+                time.sleep(random.uniform(1.0, 3.0))
+                
+                # Send request to API
+                api_response = self.scraper.get(
+                    api_url, 
+                    headers=api_headers,
+                    timeout=30,
+                    allow_redirects=True
+                )
+                
+                # Log API response status
+                logger.info(f"API response status: {api_response.status_code}")
+                
+                # Save raw API response for debugging
+                with open('api_raw_response.txt', 'wb') as f:
+                    f.write(api_response.content)
                 
                 if api_response.status_code == 200:
                     logger.info("Successfully received API response")
@@ -86,58 +152,159 @@ class DDPropertyScraper:
                         
                         if api_properties:
                             logger.info(f"Successfully extracted {len(api_properties)} properties from API")
-                            return api_properties
+                            properties = api_properties
                         else:
                             logger.warning("No properties found in API response")
                     except Exception as json_error:
                         logger.error(f"Error parsing API response: {str(json_error)}")
+                        # Try to log the response content
+                        try:
+                            logger.error(f"API response content: {api_response.text[:500]}...")
+                        except:
+                            logger.error("Could not log API response content")
+                else:
+                    logger.error(f"API request failed with status code: {api_response.status_code}")
+                    try:
+                        logger.error(f"API error response: {api_response.text[:500]}...")
+                    except:
+                        logger.error("Could not log API error response")
             except Exception as api_error:
                 logger.error(f"Error accessing API: {str(api_error)}")
+                import traceback
+                logger.error(f"API error traceback: {traceback.format_exc()}")
             
-            # If API approach failed, try web scraping
-            logger.info("API approach failed, trying web scraping...")
-            
-            # Send HTTP request using cloudscraper
-            logger.info("Sending request with cloudscraper...")
-            response = self.scraper.get(search_url, headers=self.headers)
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to fetch search results: HTTP {response.status_code}")
-                logger.info("Falling back to sample data...")
-                return self._generate_sample_data_from_params(search_params)
-            
-            logger.info("Successfully received response from ddproperty.com")
-            
-            # Save raw HTML for debugging
-            with open('raw_html.txt', 'wb') as f:
-                f.write(response.content)
-            
-            # Try to decode with different encodings
-            encodings = ['utf-8', 'iso-8859-1', 'windows-1252']
-            html_content = None
-            
-            for encoding in encodings:
-                try:
-                    html_content = response.content.decode(encoding)
-                    logger.info(f"Successfully decoded HTML with {encoding} encoding")
-                    break
-                except UnicodeDecodeError:
-                    continue
-            
-            if not html_content:
-                logger.error("Could not decode HTML content with any encoding")
-                return self._generate_sample_data_from_params(search_params)
-            
-            # Parse the HTML content
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Extract property listings
-            properties = self._extract_properties(soup)
-            logger.info(f"Extracted {len(properties)} properties from the first page")
-            
-            # If no properties found, add some sample data for testing
+            # Approach 2: Try web scraping with cloudscraper
             if not properties:
-                logger.warning("No properties found in the response, using sample data")
+                logger.info("Approach 2: Trying web scraping with cloudscraper...")
+                
+                try:
+                    # Generate a new random user agent for this request
+                    web_headers = self.headers.copy()
+                    web_headers['User-Agent'] = self.ua.random
+                    
+                    logger.info(f"Using Web User-Agent: {web_headers['User-Agent']}")
+                    
+                    # Add a delay to avoid rate limiting
+                    time.sleep(random.uniform(2.0, 5.0))
+                    
+                    # Send HTTP request using cloudscraper
+                    logger.info(f"Sending request to: {search_url}")
+                    response = self.scraper.get(
+                        search_url, 
+                        headers=web_headers,
+                        timeout=30,
+                        allow_redirects=True
+                    )
+                    
+                    logger.info(f"Web response status: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        logger.info("Successfully received response from ddproperty.com")
+                        
+                        # Save raw HTML for debugging
+                        with open('raw_html.txt', 'wb') as f:
+                            f.write(response.content)
+                        
+                        # Try to decode with different encodings
+                        encodings = ['utf-8', 'iso-8859-1', 'windows-1252']
+                        html_content = None
+                        
+                        for encoding in encodings:
+                            try:
+                                html_content = response.content.decode(encoding)
+                                logger.info(f"Successfully decoded HTML with {encoding} encoding")
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        
+                        if html_content:
+                            # Parse the HTML content
+                            soup = BeautifulSoup(html_content, 'html.parser')
+                            
+                            # Extract property listings
+                            web_properties = self._extract_properties(soup)
+                            logger.info(f"Extracted {len(web_properties)} properties from the first page")
+                            
+                            if web_properties:
+                                properties = web_properties
+                    else:
+                        logger.error(f"Failed to fetch search results: HTTP {response.status_code}")
+                except Exception as web_error:
+                    logger.error(f"Error during web scraping: {str(web_error)}")
+                    import traceback
+                    logger.error(f"Web scraping error traceback: {traceback.format_exc()}")
+            
+            # Approach 3: Try using a different library (requests)
+            if not properties:
+                logger.info("Approach 3: Trying with standard requests library...")
+                
+                try:
+                    # Generate a new random user agent for this request
+                    req_headers = self.headers.copy()
+                    req_headers['User-Agent'] = self.ua.random
+                    
+                    logger.info(f"Using Requests User-Agent: {req_headers['User-Agent']}")
+                    
+                    # Add a delay to avoid rate limiting
+                    time.sleep(random.uniform(3.0, 7.0))
+                    
+                    # Create a session
+                    session = requests.Session()
+                    session.headers.update(req_headers)
+                    
+                    # First visit the homepage to get cookies
+                    logger.info("Visiting homepage to get cookies...")
+                    home_response = session.get(self.base_url, timeout=30, verify=False)
+                    
+                    if home_response.status_code == 200:
+                        logger.info("Successfully visited homepage")
+                        
+                        # Add a delay before the next request
+                        time.sleep(random.uniform(2.0, 4.0))
+                        
+                        # Now visit the search page
+                        logger.info(f"Sending request to: {search_url}")
+                        search_response = session.get(search_url, timeout=30, verify=False)
+                        
+                        logger.info(f"Search response status: {search_response.status_code}")
+                        
+                        if search_response.status_code == 200:
+                            logger.info("Successfully received response from ddproperty.com")
+                            
+                            # Save raw HTML for debugging
+                            with open('raw_html_requests.txt', 'wb') as f:
+                                f.write(search_response.content)
+                            
+                            # Try to decode with different encodings
+                            encodings = ['utf-8', 'iso-8859-1', 'windows-1252']
+                            html_content = None
+                            
+                            for encoding in encodings:
+                                try:
+                                    html_content = search_response.content.decode(encoding)
+                                    logger.info(f"Successfully decoded HTML with {encoding} encoding")
+                                    break
+                                except UnicodeDecodeError:
+                                    continue
+                            
+                            if html_content:
+                                # Parse the HTML content
+                                soup = BeautifulSoup(html_content, 'html.parser')
+                                
+                                # Extract property listings
+                                req_properties = self._extract_properties(soup)
+                                logger.info(f"Extracted {len(req_properties)} properties from the first page")
+                                
+                                if req_properties:
+                                    properties = req_properties
+                except Exception as req_error:
+                    logger.error(f"Error using requests library: {str(req_error)}")
+                    import traceback
+                    logger.error(f"Requests error traceback: {traceback.format_exc()}")
+            
+            # If no properties found with any approach, use sample data
+            if not properties:
+                logger.warning("No properties found with any approach, using sample data")
                 properties = self._generate_sample_data_from_params(search_params)
                 
             return properties
