@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block title %}DDProperty Scraper - Search{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="text-center">Search Properties on DDProperty</h2>
+            </div>
+            <div class="card-body">
+                <form action="/search" method="post">
+                    <div class="mb-3">
+                        <label for="listing_type" class="form-label">Listing Type</label>
+                        <select class="form-select" id="listing_type" name="listing_type">
+                            <option value="sale">For Sale</option>
+                            <option value="rent">For Rent</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="location" class="form-label">Location</label>
+                        <input type="text" class="form-control" id="location" name="location" placeholder="e.g., bangkok, phuket, chiang-mai" value="bangkok">
+                        <div class="form-text">Enter location in lowercase with hyphens for spaces (e.g., chiang-mai)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="property_type" class="form-label">Property Type</label>
+                        <select class="form-select" id="property_type" name="property_type">
+                            <option value="">Any</option>
+                            <option value="CONDO">Condominium</option>
+                            <option value="HOUSE">House</option>
+                            <option value="TOWNHOUSE">Townhouse</option>
+                            <option value="LAND">Land</option>
+                            <option value="APARTMENT">Apartment</option>
+                            <option value="COMMERCIAL">Commercial</option>
+                        </select>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="price_min" class="form-label">Minimum Price (THB)</label>
+                            <input type="number" class="form-control" id="price_min" name="price_min" placeholder="Min Price">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="price_max" class="form-label">Maximum Price (THB)</label>
+                            <input type="number" class="form-control" id="price_max" name="price_max" placeholder="Max Price">
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="bedrooms" class="form-label">Bedrooms</label>
+                            <select class="form-select" id="bedrooms" name="bedrooms">
+                                <option value="">Any</option>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5+</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="bathrooms" class="form-label">Bathrooms</label>
+                            <select class="form-select" id="bathrooms" name="bathrooms">
+                                <option value="">Any</option>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5+</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Search Properties</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

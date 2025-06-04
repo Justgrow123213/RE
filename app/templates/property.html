@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ property.title }}{% endblock %}
+
+{% block head %}
+<style>
+    .property-image-gallery {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .property-image-gallery img {
+        height: 150px;
+        object-fit: cover;
+        border-radius: 5px;
+    }
+    
+    .property-main-image {
+        height: 400px;
+        object-fit: cover;
+        width: 100%;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+    
+    .property-details-table {
+        margin-top: 20px;
+    }
+    
+    .property-description {
+        white-space: pre-line;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Property Details</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <h1>{{ property.title }}</h1>
+        <p class="property-location">{{ property.address }}</p>
+        <h2 class="property-price">{{ property.price }}</h2>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-md-12">
+        {% if property.images %}
+        <img src="{{ property.images[0] }}" alt="{{ property.title }}" class="property-main-image">
+        
+        <div class="property-image-gallery">
+            {% for image in property.images %}
+            <img src="{{ image }}" alt="Property Image {{ loop.index }}" onclick="document.querySelector('.property-main-image').src = this.src">
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>Description</h3>
+            </div>
+            <div class="card-body">
+                <p class="property-description">{{ property.description }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h3>Property Details</h3>
+            </div>
+            <div class="card-body">
+                <table class="table property-details-table">
+                    <tbody>
+                        {% for key, value in property.property_details.items() %}
+                        <tr>
+                            <th>{{ key }}</th>
+                            <td>{{ value }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

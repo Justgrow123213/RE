@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block title %}Grouped Properties{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h2>Properties Grouped by {{ category|title }}</h2>
+                <a href="/results/{{ session_id }}" class="btn btn-outline-secondary mt-2">Back to Results</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% for group, properties in grouped_properties.items() %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h3>{{ category|title }}: {{ group }}</h3>
+        <p>{{ properties|length }} properties found</p>
+    </div>
+</div>
+
+<div class="row mb-5">
+    {% for property in properties %}
+    <div class="col-md-4">
+        <div class="property-card">
+            <img src="{{ property.image_url }}" alt="{{ property.title }}" class="property-image">
+            <div class="card-body">
+                <h5 class="card-title">{{ property.title }}</h5>
+                <p class="property-price">{{ property.price }}</p>
+                <p class="property-location">{{ property.location }}</p>
+                <div class="property-details">
+                    <span>{{ property.bedrooms }} Beds</span>
+                    <span>{{ property.bathrooms }} Baths</span>
+                    <span>{{ property.area }}</span>
+                </div>
+                <div class="d-grid gap-2 mt-3">
+                    <a href="{{ property.url }}" target="_blank" class="btn btn-outline-primary">View on DDProperty</a>
+                    <a href="/property/{{ property.url|replace('https://', '') }}" class="btn btn-outline-secondary">View Details</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}
