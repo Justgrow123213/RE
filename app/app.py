@@ -64,13 +64,14 @@ def search():
     session_data = {
         'filename': filename,
         'properties': properties,
-        'search_params': search_params
+        'search_params': search_params,
+        'use_selenium': use_selenium
     }
     
     with open(f"data/session_{timestamp}.json", 'w', encoding='utf-8') as f:
         json.dump(session_data, f, ensure_ascii=False, indent=4)
     
-    return redirect(url_for('results', session_id=timestamp))
+    return redirect(url_for('results', session_id=timestamp, use_selenium='true' if use_selenium else 'false'))
 
 @app.route('/results/<session_id>')
 def results(session_id):
@@ -80,11 +81,13 @@ def results(session_id):
         
         properties = session_data.get('properties', [])
         search_params = session_data.get('search_params', {})
+        use_selenium = request.args.get('use_selenium') == 'true'
         
         return render_template('results.html', 
                               properties=properties, 
                               search_params=search_params,
-                              session_id=session_id)
+                              session_id=session_id,
+                              use_selenium=use_selenium)
     except Exception as e:
         return render_template('error.html', error=str(e))
 
@@ -102,9 +105,15 @@ def group_properties(session_id):
             session_data = json.load(f)
         
         properties = session_data.get('properties', [])
+        use_selenium = session_data.get('use_selenium', False)
         
-        # Initialize scraper
-        scraper = DDPropertyScraper()
+        # Initialize appropriate scraper
+        if use_selenium and selenium_available:
+            scraper = SeleniumDDPropertyScraper()
+            logging.info("Using Selenium scraper for grouping")
+        else:
+            scraper = DDPropertyScraper()
+            logging.info("Using regular scraper for grouping")
         
         # Map frontend category names to backend category names
         category_mapping = {
@@ -129,15 +138,24 @@ def group_properties(session_id):
         return render_template('grouped.html', 
                               grouped_properties=grouped_properties, 
                               category=category,
-                              session_id=session_id)
+                              session_id=session_id,
+                              use_selenium=use_selenium)
     except Exception as e:
         return render_template('error.html', error=str(e))
 
 @app.route('/property/<path:property_url>')
 def property_details(property_url):
     try:
-        # Initialize scraper
-        scraper = DDPropertyScraper()
+        # Check if use_selenium parameter is provided
+        use_selenium = request.args.get('use_selenium') == 'true'
+        
+        # Initialize appropriate scraper
+        if use_selenium and selenium_available:
+            scraper = SeleniumDDPropertyScraper()
+            logging.info("Using Selenium scraper for property details")
+        else:
+            scraper = DDPropertyScraper()
+            logging.info("Using regular scraper for property details")
         
         # Get property details
         property_url = "https://" + property_url if not property_url.startswith('http') else property_url

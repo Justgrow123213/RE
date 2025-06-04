@@ -8,7 +8,7 @@
         <div class="card">
             <div class="card-header">
                 <h2>Properties Grouped by {{ category|title }}</h2>
-                <a href="/results/{{ session_id }}" class="btn btn-outline-secondary mt-2">Back to Results</a>
+                <a href="/results/{{ session_id }}{% if use_selenium %}?use_selenium=true{% endif %}" class="btn btn-outline-secondary mt-2">Back to Results</a>
             </div>
         </div>
     </div>
@@ -38,7 +38,7 @@
                 </div>
                 <div class="d-grid gap-2 mt-3">
                     <a href="{{ property.url }}" target="_blank" class="btn btn-outline-primary">View on DDProperty</a>
-                    <a href="/property/{{ property.url|replace('https://', '') }}" class="btn btn-outline-secondary">View Details</a>
+                    <a href="/property/{{ property.url|replace('https://', '') }}{% if use_selenium %}?use_selenium=true{% endif %}" class="btn btn-outline-secondary">View Details</a>
                 </div>
             </div>
         </div>

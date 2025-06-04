@@ -56,7 +56,7 @@
                 </div>
                 <div class="d-grid gap-2 mt-3">
                     <a href="{{ property.url }}" target="_blank" class="btn btn-outline-primary">View on DDProperty</a>
-                    <a href="/property/{{ property.url|replace('https://', '') }}" class="btn btn-outline-secondary">View Details</a>
+                    <a href="/property/{{ property.url|replace('https://', '') }}{% if use_selenium %}?use_selenium=true{% endif %}" class="btn btn-outline-secondary">View Details</a>
                 </div>
             </div>
         </div>

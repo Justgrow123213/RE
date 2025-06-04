@@ -441,3 +441,354 @@ class SeleniumDDPropertyScraper:
             sample_properties.append(property_data)
         
         return sample_properties
+        
+    def save_to_json(self, data, filename):
+        """Save data to JSON file"""
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            logger.info(f"Data saved to {filename}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving data to {filename}: {str(e)}")
+            return False
+            
+    def get_property_details(self, property_url):
+        """Get detailed information about a specific property"""
+        try:
+            # Set up Chrome driver
+            self.driver = self._setup_driver()
+            
+            if not self.driver:
+                logger.error("Failed to set up Chrome driver")
+                return self._generate_sample_property_details(property_url)
+            
+            try:
+                # Navigate to property URL
+                logger.info(f"Navigating to: {property_url}")
+                self.driver.get(property_url)
+                
+                # Wait for page to load
+                logger.info("Waiting for page to load...")
+                WebDriverWait(self.driver, 20).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                
+                # Wait for property details to load
+                time.sleep(5)  # Additional wait for JavaScript to load content
+                
+                # Save page source for debugging
+                with open('selenium_property_html.html', 'w', encoding='utf-8') as f:
+                    f.write(self.driver.page_source)
+                
+                logger.info("Property page loaded successfully")
+                
+                # Parse HTML with BeautifulSoup
+                soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+                
+                # Extract property details
+                property_details = self._extract_property_details(soup, property_url)
+                
+                # If no details found, use sample data
+                if not property_details:
+                    logger.warning("No property details found, using sample data")
+                    property_details = self._generate_sample_property_details(property_url)
+                
+                return property_details
+                
+            finally:
+                # Close the driver
+                if self.driver:
+                    self.driver.quit()
+                    self.driver = None
+                
+        except Exception as e:
+            logger.error(f"Error getting property details: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Close the driver if it exists
+            if self.driver:
+                self.driver.quit()
+                self.driver = None
+            
+            # Return sample data as fallback
+            return self._generate_sample_property_details(property_url)
+    
+    def _extract_property_details(self, soup, property_url):
+        """Extract detailed property information from the page"""
+        property_details = {}
+        
+        try:
+            # Extract title
+            title_element = soup.select_one("h1.PropertyHeaderstyle__TitleWrapper-srp__sc-1wv3ypn-0") or \
+                           soup.select_one("[data-testid='listing-title']") or \
+                           soup.select_one("h1")
+            
+            if title_element:
+                property_details["title"] = title_element.text.strip()
+            else:
+                property_details["title"] = "No title"
+            
+            # Extract price
+            price_element = soup.select_one(".PropertyHeaderPricestyle__Wrapper-srp__sc-1uiv9m9-0") or \
+                           soup.select_one("[data-testid='listing-price']") or \
+                           soup.select_one(".price")
+            
+            if price_element:
+                property_details["price"] = price_element.text.strip()
+            else:
+                property_details["price"] = "Price not specified"
+            
+            # Extract location
+            location_element = soup.select_one(".PropertyHeaderAddressstyle__AddressWrapper-srp__sc-1pf0x9j-0") or \
+                              soup.select_one("[data-testid='listing-location']") or \
+                              soup.select_one(".location")
+            
+            if location_element:
+                property_details["location"] = location_element.text.strip()
+            else:
+                property_details["location"] = "Location not specified"
+            
+            # Extract property details (bedrooms, bathrooms, area)
+            details_elements = soup.select(".PropertyHeaderInfostyle__InfoItem-srp__sc-1e9s5qe-0") or \
+                              soup.select("[data-testid='listing-details'] span") or \
+                              soup.select(".details span")
+            
+            property_details["bedrooms"] = "N/A"
+            property_details["bathrooms"] = "N/A"
+            property_details["area"] = "N/A"
+            
+            for detail in details_elements:
+                detail_text = detail.text.strip()
+                if "bed" in detail_text.lower():
+                    property_details["bedrooms"] = detail_text
+                elif "bath" in detail_text.lower():
+                    property_details["bathrooms"] = detail_text
+                elif "sq" in detail_text.lower():
+                    property_details["area"] = detail_text
+            
+            # Extract description
+            description_element = soup.select_one(".PropertyDescriptionstyle__DescriptionWrapper-srp__sc-1kb1v7s-0") or \
+                                 soup.select_one("[data-testid='listing-description']") or \
+                                 soup.select_one(".description")
+            
+            if description_element:
+                property_details["description"] = description_element.text.strip()
+            else:
+                property_details["description"] = "No description available"
+            
+            # Extract features/amenities
+            features_elements = soup.select(".PropertyFeaturesHighlightstyle__FeatureItem-srp__sc-1qb4f3j-1") or \
+                               soup.select("[data-testid='listing-features'] li") or \
+                               soup.select(".features li")
+            
+            features = []
+            for feature in features_elements:
+                features.append(feature.text.strip())
+            
+            property_details["features"] = features if features else ["No features listed"]
+            
+            # Extract images
+            image_elements = soup.select(".PropertyGallerystyle__GalleryImage-srp__sc-1x7wd1-0 img") or \
+                            soup.select("[data-testid='listing-images'] img") or \
+                            soup.select(".gallery img")
+            
+            images = []
+            for img in image_elements:
+                if img.has_attr("src"):
+                    images.append(img["src"])
+                elif img.has_attr("data-src"):
+                    images.append(img["data-src"])
+            
+            property_details["images"] = images if images else ["No images available"]
+            
+            # Add property URL
+            property_details["url"] = property_url
+            
+            # Extract contact information
+            contact_element = soup.select_one(".AgentInfostyle__AgentName-srp__sc-1pz5wlx-0") or \
+                             soup.select_one("[data-testid='listing-agent']") or \
+                             soup.select_one(".agent-info")
+            
+            if contact_element:
+                property_details["contact"] = contact_element.text.strip()
+            else:
+                property_details["contact"] = "Contact information not available"
+            
+            return property_details
+            
+        except Exception as e:
+            logger.error(f"Error extracting property details: {str(e)}")
+            return {}
+    
+    def _generate_sample_property_details(self, property_url):
+        """Generate sample property details"""
+        import random
+        
+        property_types = ["Condo", "Apartment", "House", "Villa", "Townhouse"]
+        areas = ["Sukhumvit", "Silom", "Sathorn", "Thonglor", "Asoke", "Rama 9", "Ratchada"]
+        
+        # Generate random property data
+        bedrooms = random.randint(1, 4)
+        bathrooms = random.randint(1, 3)
+        price = random.randint(1000000, 20000000)
+        area_size = random.randint(30, 200)
+        
+        # Format price with commas
+        price_formatted = f"฿ {price:,}"
+        
+        # Generate sample description
+        descriptions = [
+            "Beautiful property in a prime location with modern amenities and convenient access to public transportation.",
+            "Luxurious property with high-end finishes, spacious rooms, and stunning views of the city skyline.",
+            "Cozy property in a quiet neighborhood, perfect for families or professionals looking for a peaceful retreat.",
+            "Newly renovated property with contemporary design, featuring an open floor plan and abundant natural light.",
+            "Exclusive property in a prestigious development, offering premium facilities and 24-hour security."
+        ]
+        
+        # Generate sample features
+        all_features = [
+            "Swimming Pool", "Fitness Center", "24-hour Security", "Parking", "Garden", 
+            "Balcony", "Air Conditioning", "Fully Furnished", "Pet Friendly", "Near BTS/MRT",
+            "High-speed Internet", "Smart Home System", "Rooftop Terrace", "Children's Playground",
+            "Sauna", "Jacuzzi", "Tennis Court", "Basketball Court", "Library", "Meeting Room"
+        ]
+        
+        # Select random features
+        features = random.sample(all_features, random.randint(5, 10))
+        
+        # Generate sample images
+        images = [
+            f"https://picsum.photos/id/{random.randint(1, 100)}/800/600" for _ in range(5)
+        ]
+        
+        # Create property details
+        property_details = {
+            "title": f"{random.choice(property_types)} for Sale in {random.choice(areas)}",
+            "price": price_formatted,
+            "location": f"{random.choice(areas)}, Bangkok",
+            "bedrooms": f"{bedrooms} bed",
+            "bathrooms": f"{bathrooms} bath",
+            "area": f"{area_size} sq.m",
+            "description": random.choice(descriptions),
+            "features": features,
+            "images": images,
+            "url": property_url,
+            "contact": f"Agent: {random.choice(['John', 'Sarah', 'Michael', 'Emma', 'David'])} (Sample Data)"
+        }
+        
+        return property_details
+    
+    def group_properties_by_category(self, properties, category):
+        """Group properties by a specific category"""
+        grouped = {}
+        
+        try:
+            if category == 'location':
+                # Group by location
+                for prop in properties:
+                    location = prop.get('location', 'Unknown')
+                    if location not in grouped:
+                        grouped[location] = []
+                    grouped[location].append(prop)
+                    
+            elif category == 'bedrooms':
+                # Group by number of bedrooms
+                for prop in properties:
+                    bedrooms = prop.get('bedrooms', 'N/A')
+                    if bedrooms not in grouped:
+                        grouped[bedrooms] = []
+                    grouped[bedrooms].append(prop)
+                    
+            elif category == 'bathrooms':
+                # Group by number of bathrooms
+                for prop in properties:
+                    bathrooms = prop.get('bathrooms', 'N/A')
+                    if bathrooms not in grouped:
+                        grouped[bathrooms] = []
+                    grouped[bathrooms].append(prop)
+                    
+            elif category == 'price_range':
+                # Group by price range
+                price_ranges = {
+                    'Under ฿1M': (0, 1000000),
+                    '฿1M - ฿3M': (1000000, 3000000),
+                    '฿3M - ฿5M': (3000000, 5000000),
+                    '฿5M - ฿10M': (5000000, 10000000),
+                    '฿10M - ฿20M': (10000000, 20000000),
+                    'Over ฿20M': (20000000, float('inf'))
+                }
+                
+                for prop in properties:
+                    price_text = prop.get('price', '0')
+                    # Extract numeric value from price text
+                    try:
+                        # Remove currency symbol and commas
+                        price_str = price_text.replace('฿', '').replace(',', '').strip()
+                        # Extract first number from string
+                        import re
+                        price_match = re.search(r'\d+', price_str)
+                        if price_match:
+                            price = int(price_match.group())
+                        else:
+                            price = 0
+                    except:
+                        price = 0
+                    
+                    # Find appropriate price range
+                    range_name = 'Unknown'
+                    for name, (min_price, max_price) in price_ranges.items():
+                        if min_price <= price < max_price:
+                            range_name = name
+                            break
+                    
+                    if range_name not in grouped:
+                        grouped[range_name] = []
+                    grouped[range_name].append(prop)
+                    
+            elif category == 'area_range':
+                # Group by area range
+                area_ranges = {
+                    'Under 30 sq.m': (0, 30),
+                    '30-50 sq.m': (30, 50),
+                    '50-80 sq.m': (50, 80),
+                    '80-120 sq.m': (80, 120),
+                    '120-200 sq.m': (120, 200),
+                    'Over 200 sq.m': (200, float('inf'))
+                }
+                
+                for prop in properties:
+                    area_text = prop.get('area', '0')
+                    # Extract numeric value from area text
+                    try:
+                        # Extract first number from string
+                        import re
+                        area_match = re.search(r'\d+', area_text)
+                        if area_match:
+                            area = int(area_match.group())
+                        else:
+                            area = 0
+                    except:
+                        area = 0
+                    
+                    # Find appropriate area range
+                    range_name = 'Unknown'
+                    for name, (min_area, max_area) in area_ranges.items():
+                        if min_area <= area < max_area:
+                            range_name = name
+                            break
+                    
+                    if range_name not in grouped:
+                        grouped[range_name] = []
+                    grouped[range_name].append(prop)
+            
+            else:
+                # Default: return all properties in one group
+                grouped['All Properties'] = properties
+                
+            return grouped
+            
+        except Exception as e:
+            logger.error(f"Error grouping properties by {category}: {str(e)}")
+            return {'Error': properties}
