@@ -1,9 +1,10 @@
 import os
 import sys
 
-# Add the app directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
+# Add the current directory to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Import the app
 from app.app import app
 
 if __name__ == '__main__':

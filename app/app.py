@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 import os
 import json
 from datetime import datetime
-from scraper import DDPropertyScraper
+from app.scraper import DDPropertyScraper
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
