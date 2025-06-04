@@ -74,7 +74,7 @@ def results(session_id):
 def group_properties(session_id):
     try:
         # Get the category to group by
-        category = request.form.get('category')
+        category = request.form.get('category', 'location')
         
         if not category:
             return jsonify({'error': 'No category specified'}), 400
@@ -88,8 +88,20 @@ def group_properties(session_id):
         # Initialize scraper
         scraper = DDPropertyScraper()
         
+        # Map frontend category names to backend category names
+        category_mapping = {
+            'location': 'location',
+            'bedrooms': 'bedrooms',
+            'bathrooms': 'bathrooms',
+            'price_range': 'price_range',
+            'area_range': 'area_range'
+        }
+        
+        # Use the mapped category or default to location
+        backend_category = category_mapping.get(category, 'location')
+        
         # Group properties by category
-        grouped_properties = scraper.group_properties_by_category(properties, category)
+        grouped_properties = scraper.group_properties_by_category(properties, backend_category)
         
         # Save grouped results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -139,7 +151,7 @@ def api_group():
         # Get properties and category from JSON
         data = request.json
         properties = data.get('properties', [])
-        category = data.get('category')
+        category = data.get('category', 'location')
         
         if not category:
             return jsonify({'error': 'No category specified'}), 400
@@ -147,8 +159,20 @@ def api_group():
         # Initialize scraper
         scraper = DDPropertyScraper()
         
+        # Map frontend category names to backend category names
+        category_mapping = {
+            'location': 'location',
+            'bedrooms': 'bedrooms',
+            'bathrooms': 'bathrooms',
+            'price_range': 'price_range',
+            'area_range': 'area_range'
+        }
+        
+        # Use the mapped category or default to location
+        backend_category = category_mapping.get(category, 'location')
+        
         # Group properties by category
-        grouped_properties = scraper.group_properties_by_category(properties, category)
+        grouped_properties = scraper.group_properties_by_category(properties, backend_category)
         
         return jsonify(grouped_properties)
     except Exception as e:
