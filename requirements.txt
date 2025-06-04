@@ -5,3 +5,6 @@ python-dotenv
 selenium
 webdriver-manager
 pandas
+cloudscraper
+fake-useragent
+requests-ip-rotator

@@ -74,6 +74,14 @@
                         </div>
                     </div>
                     
+                    {% if selenium_available %}
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use_selenium" name="use_selenium" value="true">
+                        <label class="form-check-label" for="use_selenium">Use Selenium for better results (slower)</label>
+                        <div class="form-text">Selenium uses a real browser to scrape data, which may provide better results but takes longer.</div>
+                    </div>
+                    {% endif %}
+                    
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary">Search Properties</button>
                     </div>

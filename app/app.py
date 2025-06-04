@@ -1,8 +1,18 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 import os
 import json
+import logging
 from datetime import datetime
 from app.scraper import DDPropertyScraper
+
+# Try to import Selenium scraper
+try:
+    from app.selenium_scraper import SeleniumDDPropertyScraper
+    selenium_available = True
+    logging.info("Selenium scraper is available")
+except Exception as e:
+    logging.error(f"Selenium not available: {str(e)}")
+    selenium_available = False
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
@@ -13,7 +23,7 @@ os.makedirs('data', exist_ok=True)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', selenium_available=selenium_available)
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -31,8 +41,16 @@ def search():
     # Remove empty parameters
     search_params = {k: v for k, v in search_params.items() if v}
     
-    # Initialize scraper
-    scraper = DDPropertyScraper()
+    # Check if use_selenium parameter is provided
+    use_selenium = request.form.get('use_selenium') == 'true'
+    
+    # Initialize appropriate scraper
+    if use_selenium and selenium_available:
+        scraper = SeleniumDDPropertyScraper()
+        logging.info("Using Selenium scraper")
+    else:
+        scraper = DDPropertyScraper()
+        logging.info("Using regular scraper")
     
     # Search for properties
     properties = scraper.search_properties(search_params)
