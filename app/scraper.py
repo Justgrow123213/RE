@@ -55,6 +55,48 @@ class DDPropertyScraper:
             search_url = self._build_search_url(search_params)
             logger.info(f"Searching with URL: {search_url}")
             
+            # Try to use API endpoint instead of web scraping
+            api_url = self._get_api_url_from_params(search_params)
+            logger.info(f"Trying API endpoint: {api_url}")
+            
+            # Set API-specific headers
+            api_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Referer': 'https://www.ddproperty.com/',
+                'Origin': 'https://www.ddproperty.com'
+            }
+            
+            # Send HTTP request to API
+            try:
+                logger.info("Sending request to API endpoint...")
+                api_response = self.scraper.get(api_url, headers=api_headers)
+                
+                if api_response.status_code == 200:
+                    logger.info("Successfully received API response")
+                    
+                    try:
+                        # Try to parse JSON response
+                        data = api_response.json()
+                        
+                        # Extract properties from API response
+                        api_properties = self._extract_properties_from_api(data)
+                        
+                        if api_properties:
+                            logger.info(f"Successfully extracted {len(api_properties)} properties from API")
+                            return api_properties
+                        else:
+                            logger.warning("No properties found in API response")
+                    except Exception as json_error:
+                        logger.error(f"Error parsing API response: {str(json_error)}")
+            except Exception as api_error:
+                logger.error(f"Error accessing API: {str(api_error)}")
+            
+            # If API approach failed, try web scraping
+            logger.info("API approach failed, trying web scraping...")
+            
             # Send HTTP request using cloudscraper
             logger.info("Sending request with cloudscraper...")
             response = self.scraper.get(search_url, headers=self.headers)
@@ -66,35 +108,32 @@ class DDPropertyScraper:
             
             logger.info("Successfully received response from ddproperty.com")
             
+            # Save raw HTML for debugging
+            with open('raw_html.txt', 'wb') as f:
+                f.write(response.content)
+            
+            # Try to decode with different encodings
+            encodings = ['utf-8', 'iso-8859-1', 'windows-1252']
+            html_content = None
+            
+            for encoding in encodings:
+                try:
+                    html_content = response.content.decode(encoding)
+                    logger.info(f"Successfully decoded HTML with {encoding} encoding")
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if not html_content:
+                logger.error("Could not decode HTML content with any encoding")
+                return self._generate_sample_data_from_params(search_params)
+            
             # Parse the HTML content
-            soup = BeautifulSoup(response.content, 'html.parser')
+            soup = BeautifulSoup(html_content, 'html.parser')
             
             # Extract property listings
             properties = self._extract_properties(soup)
             logger.info(f"Extracted {len(properties)} properties from the first page")
-            
-            # Check if there are more pages
-            total_pages = self._get_total_pages(soup)
-            current_page = 1
-            
-            # Scrape additional pages if available (limit to 2 pages for demo)
-            while current_page < min(total_pages, 2) and len(properties) < 30:
-                current_page += 1
-                next_page_url = f"{search_url}&page={current_page}"
-                logger.info(f"Scraping page {current_page} of {total_pages}")
-                
-                # Add a delay to avoid rate limiting
-                time.sleep(random.uniform(2.0, 3.0))
-                
-                response = self.scraper.get(next_page_url, headers=self.headers)
-                if response.status_code != 200:
-                    logger.error(f"Failed to fetch page {current_page}: HTTP {response.status_code}")
-                    break
-                    
-                soup = BeautifulSoup(response.content, 'html.parser')
-                page_properties = self._extract_properties(soup)
-                logger.info(f"Extracted {len(page_properties)} properties from page {current_page}")
-                properties.extend(page_properties)
             
             # If no properties found, add some sample data for testing
             if not properties:
@@ -322,6 +361,127 @@ class DDPropertyScraper:
                 continue
                 
         return properties
+    
+    def _get_api_url_from_params(self, params):
+        """Build API URL based on search parameters"""
+        # Base API URL
+        api_base_url = "https://www.ddproperty.com/api-v2/property-search"
+        
+        # Build query parameters
+        query_params = {
+            "market": "th",
+            "language": "en",
+            "page": 1,
+            "limit": 20,
+            "propertyType": params.get("property_type", "CONDO"),
+            "sort": "relevance"
+        }
+        
+        # Add location if provided
+        if params.get("location"):
+            query_params["location"] = params.get("location")
+        
+        # Add price range if provided
+        if params.get("price_min"):
+            query_params["minPrice"] = params.get("price_min")
+        if params.get("price_max"):
+            query_params["maxPrice"] = params.get("price_max")
+        
+        # Add bedroom range if provided
+        if params.get("bedrooms_min"):
+            query_params["minBeds"] = params.get("bedrooms_min")
+        if params.get("bedrooms_max"):
+            query_params["maxBeds"] = params.get("bedrooms_max")
+        
+        # Add bathroom range if provided
+        if params.get("bathrooms_min"):
+            query_params["minBaths"] = params.get("bathrooms_min")
+        if params.get("bathrooms_max"):
+            query_params["maxBaths"] = params.get("bathrooms_max")
+        
+        # Add area range if provided
+        if params.get("area_min"):
+            query_params["minArea"] = params.get("area_min")
+        if params.get("area_max"):
+            query_params["maxArea"] = params.get("area_max")
+        
+        # Convert query params to URL query string
+        query_string = "&".join([f"{k}={v}" for k, v in query_params.items()])
+        
+        return f"{api_base_url}?{query_string}"
+    
+    def _extract_properties_from_api(self, data):
+        """Extract properties from API response"""
+        properties = []
+        
+        try:
+            # Save API response for debugging
+            with open('api_response.json', 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            # Extract properties from the response
+            if "properties" in data:
+                property_items = data["properties"]
+                
+                for item in property_items:
+                    try:
+                        property_data = {}
+                        
+                        # Extract basic information
+                        property_data["title"] = item.get("title", "No title")
+                        
+                        # Extract price
+                        if "price" in item:
+                            property_data["price"] = f"{item['price']['currency']} {item['price']['amount']}"
+                        else:
+                            property_data["price"] = "Price not specified"
+                        
+                        # Extract location
+                        address_parts = []
+                        if "address" in item:
+                            if "district" in item["address"]:
+                                address_parts.append(item["address"]["district"])
+                            if "city" in item["address"]:
+                                address_parts.append(item["address"]["city"])
+                            if "state" in item["address"]:
+                                address_parts.append(item["address"]["state"])
+                        
+                        property_data["location"] = ", ".join(address_parts) if address_parts else "Location not specified"
+                        
+                        # Extract property details
+                        property_data["bedrooms"] = str(item.get("bedrooms", "N/A"))
+                        property_data["bathrooms"] = str(item.get("bathrooms", "N/A"))
+                        
+                        if "area" in item:
+                            property_data["area"] = f"{item['area']['size']} {item['area']['unit']}"
+                        else:
+                            property_data["area"] = "N/A"
+                        
+                        # Extract URL
+                        if "url" in item:
+                            property_data["url"] = item["url"]
+                            if not property_data["url"].startswith("http"):
+                                property_data["url"] = f"{self.base_url}{property_data['url']}"
+                        else:
+                            property_data["url"] = "URL not available"
+                        
+                        # Extract image URL
+                        if "images" in item and item["images"]:
+                            property_data["image_url"] = item["images"][0].get("url", "No image")
+                        else:
+                            property_data["image_url"] = "No image"
+                        
+                        properties.append(property_data)
+                        
+                    except Exception as e:
+                        logger.error(f"Error extracting property from API: {str(e)}")
+                        continue
+            
+            return properties
+            
+        except Exception as e:
+            logger.error(f"Error processing API response: {str(e)}")
+            return []
     
     def _get_total_pages(self, soup):
         """Extract the total number of pages from pagination"""
