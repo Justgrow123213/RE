@@ -5,6 +5,9 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 import random
+import cloudscraper  # For bypassing Cloudflare protection
+import os
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,12 +16,32 @@ logger = logging.getLogger(__name__)
 class DDPropertyScraper:
     def __init__(self):
         self.base_url = "https://www.ddproperty.com"
+        
+        # Create a cloudscraper session to bypass Cloudflare protection
+        self.scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            },
+            delay=5
+        )
+        
+        # Set headers to mimic a real browser
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,th;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'max-age=0',
+            'Upgrade-Insecure-Requests': '1',
             'Referer': 'https://www.ddproperty.com/',
-            'Connection': 'keep-alive'
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'DNT': '1'
         }
             
     def search_properties(self, search_params):
@@ -28,20 +51,63 @@ class DDPropertyScraper:
         search_params: dict with keys like 'location', 'property_type', 'price_min', 'price_max', etc.
         """
         try:
-            # Construct search URL based on parameters (for logging only)
+            # Construct search URL based on parameters
             search_url = self._build_search_url(search_params)
             logger.info(f"Searching with URL: {search_url}")
             
-            # Generate sample data based on search parameters
-            properties = self._generate_sample_data_from_params(search_params)
-            logger.info(f"Generated {len(properties)} sample properties based on search parameters")
+            # Send HTTP request using cloudscraper
+            logger.info("Sending request with cloudscraper...")
+            response = self.scraper.get(search_url, headers=self.headers)
             
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch search results: HTTP {response.status_code}")
+                logger.info("Falling back to sample data...")
+                return self._generate_sample_data_from_params(search_params)
+            
+            logger.info("Successfully received response from ddproperty.com")
+            
+            # Parse the HTML content
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract property listings
+            properties = self._extract_properties(soup)
+            logger.info(f"Extracted {len(properties)} properties from the first page")
+            
+            # Check if there are more pages
+            total_pages = self._get_total_pages(soup)
+            current_page = 1
+            
+            # Scrape additional pages if available (limit to 2 pages for demo)
+            while current_page < min(total_pages, 2) and len(properties) < 30:
+                current_page += 1
+                next_page_url = f"{search_url}&page={current_page}"
+                logger.info(f"Scraping page {current_page} of {total_pages}")
+                
+                # Add a delay to avoid rate limiting
+                time.sleep(random.uniform(2.0, 3.0))
+                
+                response = self.scraper.get(next_page_url, headers=self.headers)
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch page {current_page}: HTTP {response.status_code}")
+                    break
+                    
+                soup = BeautifulSoup(response.content, 'html.parser')
+                page_properties = self._extract_properties(soup)
+                logger.info(f"Extracted {len(page_properties)} properties from page {current_page}")
+                properties.extend(page_properties)
+            
+            # If no properties found, add some sample data for testing
+            if not properties:
+                logger.warning("No properties found in the response, using sample data")
+                properties = self._generate_sample_data_from_params(search_params)
+                
             return properties
             
         except Exception as e:
-            logger.error(f"Error during property search: {e}")
-            # Return basic sample data in case of error
-            return self._generate_sample_data()
+            logger.error(f"Error during property search: {str(e)}")
+            # Return sample data in case of error
+            logger.info("Falling back to sample data due to error")
+            return self._generate_sample_data_from_params(search_params)
     
     def _build_search_url(self, params):
         """Build search URL based on parameters"""
@@ -94,44 +160,162 @@ class DDPropertyScraper:
         """Extract property information from the page"""
         properties = []
         
-        # Find all property cards
-        property_cards = soup.select("div.ListingCardstyle__ListingCardContainer-srp__sc-1v136dp-0")
+        # Save HTML for debugging
+        with open('debug_html.html', 'w', encoding='utf-8') as f:
+            f.write(str(soup))
+        
+        logger.info("Saved HTML for debugging")
+        
+        # Try different selectors for property listings
+        property_cards = []
+        
+        # Try different selectors that might be used on the site
+        selectors = [
+            "div.ListingCardstyle__ListingCardContainer-srp__sc-1v136dp-0",
+            "div.listing-card",
+            "div[data-testid='listing-card']",
+            "div.property-card",
+            "article.property-card-container",
+            "div.ddp-listing-card",
+            "div.ListingsListstyle__ListingListItemWrapper-srp__sc-i2mla0-1",
+            "div.ddp__StyledCard-xbmqbq-0"
+        ]
+        
+        for selector in selectors:
+            property_cards = soup.select(selector)
+            if property_cards:
+                logger.info(f"Found {len(property_cards)} properties using selector: {selector}")
+                break
+        
+        if not property_cards:
+            logger.warning("Could not find property elements with any selector")
+            # Try a more generic approach - look for divs with certain attributes
+            property_cards = soup.select("div[class*='listing'], div[class*='property'], div[class*='card']")
+            if property_cards:
+                logger.info(f"Found {len(property_cards)} properties using generic selector")
         
         for card in property_cards:
             try:
                 # Extract property details
                 property_data = {}
                 
-                # Title
-                title_elem = card.select_one("h2.ListingCardstyle__TitleWrapper-srp__sc-1v136dp-7")
-                property_data['title'] = title_elem.text.strip() if title_elem else "No title"
+                # Title - try different selectors
+                title = "No title"
+                title_selectors = [
+                    "h2.ListingCardstyle__TitleWrapper-srp__sc-1v136dp-7",
+                    "h2", "h3", "div.listing-title", "div.title",
+                    "[class*='title']", "[data-testid*='title']"
+                ]
                 
-                # Price
-                price_elem = card.select_one("span.PricingInfostyle__Amount-srp__sc-19c7c2f-1")
-                property_data['price'] = price_elem.text.strip() if price_elem else "Price not specified"
+                for selector in title_selectors:
+                    title_elem = card.select_one(selector)
+                    if title_elem:
+                        title = title_elem.text.strip()
+                        break
                 
-                # Location
-                location_elem = card.select_one("p.ListingCardstyle__Address-srp__sc-1v136dp-8")
-                property_data['location'] = location_elem.text.strip() if location_elem else "Location not specified"
+                property_data['title'] = title
+                
+                # Price - try different selectors
+                price = "Price not specified"
+                price_selectors = [
+                    "span.PricingInfostyle__Amount-srp__sc-19c7c2f-1",
+                    "span.price", "div.price", "div[data-testid='price']",
+                    "[class*='price']", "[data-testid*='price']"
+                ]
+                
+                for selector in price_selectors:
+                    price_elem = card.select_one(selector)
+                    if price_elem:
+                        price = price_elem.text.strip()
+                        break
+                
+                property_data['price'] = price
+                
+                # Location - try different selectors
+                location = "Location not specified"
+                location_selectors = [
+                    "p.ListingCardstyle__Address-srp__sc-1v136dp-8",
+                    "div.address", "div.location", "span.location",
+                    "[class*='address']", "[class*='location']"
+                ]
+                
+                for selector in location_selectors:
+                    location_elem = card.select_one(selector)
+                    if location_elem:
+                        location = location_elem.text.strip()
+                        break
+                
+                property_data['location'] = location
                 
                 # Property details (bedrooms, bathrooms, area)
-                details_elems = card.select("div.ListingCardstyle__KeyInfoContainer-srp__sc-1v136dp-9 span")
-                property_data['bedrooms'] = details_elems[0].text.strip() if len(details_elems) > 0 else "N/A"
-                property_data['bathrooms'] = details_elems[1].text.strip() if len(details_elems) > 1 else "N/A"
-                property_data['area'] = details_elems[2].text.strip() if len(details_elems) > 2 else "N/A"
+                bedrooms = "N/A"
+                bathrooms = "N/A"
+                area = "N/A"
+                
+                # Try to find details in different ways
+                detail_selectors = [
+                    "div.ListingCardstyle__KeyInfoContainer-srp__sc-1v136dp-9 span",
+                    "div.key-details span", 
+                    "div.property-info span", 
+                    "div.listing-details span",
+                    "[class*='bedroom']", "[class*='bathroom']", "[class*='area']"
+                ]
+                
+                for selector in detail_selectors:
+                    details_elems = card.select(selector)
+                    if details_elems:
+                        # Try to extract by position
+                        if len(details_elems) > 0:
+                            text = details_elems[0].text.strip()
+                            if "bed" in text.lower():
+                                bedrooms = text
+                        if len(details_elems) > 1:
+                            text = details_elems[1].text.strip()
+                            if "bath" in text.lower():
+                                bathrooms = text
+                        if len(details_elems) > 2:
+                            text = details_elems[2].text.strip()
+                            if "sqm" in text.lower() or "sq.m" in text.lower():
+                                area = text
+                        
+                        # Also try to extract by content
+                        for elem in details_elems:
+                            text = elem.text.strip()
+                            if "bed" in text.lower() and bedrooms == "N/A":
+                                bedrooms = text
+                            elif "bath" in text.lower() and bathrooms == "N/A":
+                                bathrooms = text
+                            elif ("sqm" in text.lower() or "sq.m" in text.lower()) and area == "N/A":
+                                area = text
+                
+                property_data['bedrooms'] = bedrooms
+                property_data['bathrooms'] = bathrooms
+                property_data['area'] = area
                 
                 # Property URL
                 link_elem = card.select_one("a")
                 if link_elem and 'href' in link_elem.attrs:
-                    property_data['url'] = self.base_url + link_elem['href']
+                    url = link_elem['href']
+                    if not url.startswith('http'):
+                        url = self.base_url + url
+                    property_data['url'] = url
                 else:
                     property_data['url'] = "URL not available"
                 
                 # Image URL
                 img_elem = card.select_one("img")
-                property_data['image_url'] = img_elem['src'] if img_elem and 'src' in img_elem.attrs else "No image"
+                if img_elem:
+                    if 'src' in img_elem.attrs:
+                        property_data['image_url'] = img_elem['src']
+                    elif 'data-src' in img_elem.attrs:
+                        property_data['image_url'] = img_elem['data-src']
+                    else:
+                        property_data['image_url'] = "No image"
+                else:
+                    property_data['image_url'] = "No image"
                 
                 properties.append(property_data)
+                logger.info(f"Extracted property: {title}")
                 
             except Exception as e:
                 logger.error(f"Error extracting property data: {e}")
@@ -244,8 +428,182 @@ class DDPropertyScraper:
         
     def get_property_details(self, property_url):
         """Get detailed information about a specific property"""
-        # Always return sample property details
-        return self._generate_sample_property_details()
+        try:
+            logger.info(f"Getting details for property: {property_url}")
+            
+            # Send HTTP request using cloudscraper
+            response = self.scraper.get(property_url, headers=self.headers)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch property details: HTTP {response.status_code}")
+                return self._generate_sample_property_details()
+                
+            # Parse the HTML content
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Save HTML for debugging
+            with open('debug_property_html.html', 'w', encoding='utf-8') as f:
+                f.write(str(soup))
+            
+            # Extract detailed property information
+            details = {}
+            
+            # Try different selectors for title
+            title = "No title"
+            title_selectors = [
+                "h1.PropertyDetailsstyle__TitleWrapper-srp__sc-1dj5kkj-2",
+                "h1[class*='title']", "h1.title", "h1"
+            ]
+            
+            for selector in title_selectors:
+                title_elem = soup.select_one(selector)
+                if title_elem:
+                    title = title_elem.text.strip()
+                    break
+                    
+            details['title'] = title
+            
+            # Try different selectors for price
+            price = "Price not specified"
+            price_selectors = [
+                "div.PricingInfostyle__PriceContainer-srp__sc-19c7c2f-0 span",
+                "div[class*='price'] span", "span[class*='price']",
+                "div.price", "span.price"
+            ]
+            
+            for selector in price_selectors:
+                price_elem = soup.select_one(selector)
+                if price_elem:
+                    price = price_elem.text.strip()
+                    break
+                    
+            details['price'] = price
+            
+            # Try different selectors for address
+            address = "Address not specified"
+            address_selectors = [
+                "span.PropertyDetailsstyle__Address-srp__sc-1dj5kkj-3",
+                "span[class*='address']", "div[class*='address']",
+                "div.address", "span.address"
+            ]
+            
+            for selector in address_selectors:
+                address_elem = soup.select_one(selector)
+                if address_elem:
+                    address = address_elem.text.strip()
+                    break
+                    
+            details['address'] = address
+            
+            # Property details
+            property_details = {}
+            
+            # Try different selectors for property details section
+            detail_section_selectors = [
+                "div.DetailsSectionstyle__DetailsContainer-srp__sc-1gv43ito-0",
+                "div[class*='details']", "div.property-details",
+                "div.details-section"
+            ]
+            
+            for section_selector in detail_section_selectors:
+                detail_sections = soup.select(section_selector)
+                
+                for section in detail_sections:
+                    section_title_elem = section.select_one("h2, h3")
+                    if not section_title_elem:
+                        continue
+                        
+                    section_title = section_title_elem.text.strip()
+                    
+                    if "property details" in section_title.lower():
+                        # Try different selectors for detail items
+                        detail_item_selectors = [
+                            "div.KeyInfosectionstyle__KeyInfoContainer-srp__sc-jkxicn-0",
+                            "div[class*='key-info']", "div.detail-item",
+                            "div.property-attribute"
+                        ]
+                        
+                        for item_selector in detail_item_selectors:
+                            detail_items = section.select(item_selector)
+                            
+                            for item in detail_items:
+                                # Try different selectors for label and value
+                                label_selectors = [
+                                    "div.KeyInfosectionstyle__Label-srp__sc-jkxicn-1",
+                                    "div[class*='label']", "span.label", "div.attribute-label"
+                                ]
+                                
+                                value_selectors = [
+                                    "div.KeyInfosectionstyle__Value-srp__sc-jkxicn-2",
+                                    "div[class*='value']", "span.value", "div.attribute-value"
+                                ]
+                                
+                                label_elem = None
+                                value_elem = None
+                                
+                                for selector in label_selectors:
+                                    label_elem = item.select_one(selector)
+                                    if label_elem:
+                                        break
+                                        
+                                for selector in value_selectors:
+                                    value_elem = item.select_one(selector)
+                                    if value_elem:
+                                        break
+                                
+                                if label_elem and value_elem:
+                                    label = label_elem.text.strip()
+                                    value = value_elem.text.strip()
+                                    property_details[label] = value
+            
+            details['property_details'] = property_details
+            
+            # Description
+            description = "No description available"
+            description_selectors = [
+                "div.PropertyDescriptionstyle__PropertyDescriptionContainer-srp__sc-1cz8d8w-0 p",
+                "div[class*='description'] p", "div.description p",
+                "div[class*='description']", "div.description"
+            ]
+            
+            for selector in description_selectors:
+                description_elem = soup.select_one(selector)
+                if description_elem:
+                    description = description_elem.text.strip()
+                    break
+                    
+            details['description'] = description
+            
+            # Images
+            images = []
+            image_selectors = [
+                "div.GallerySliderstyle__GalleryContainer-srp__sc-1t5vfh0-0 img",
+                "div[class*='gallery'] img", "div.gallery img",
+                "div[class*='slider'] img", "div.slider img"
+            ]
+            
+            for selector in image_selectors:
+                image_elems = soup.select(selector)
+                if image_elems:
+                    for img in image_elems:
+                        if 'src' in img.attrs:
+                            images.append(img['src'])
+                        elif 'data-src' in img.attrs:
+                            images.append(img['data-src'])
+                    break
+                    
+            details['images'] = images
+            
+            # If details are empty or missing critical information, return sample data
+            if not details or not details.get('title') or details['title'] == "No title":
+                logger.warning("Failed to extract property details, using sample data")
+                return self._generate_sample_property_details()
+                
+            return details
+            
+        except Exception as e:
+            logger.error(f"Error getting property details: {str(e)}")
+            return self._generate_sample_property_details()
             
     def group_properties_by_category(self, properties, category):
         """Group properties by a specific category"""
